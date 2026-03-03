@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from src.app.api.v1 import auth, tables
+from src.app.api.v1 import auth, tables, data
 from src.app.middleware.auth_middleware import AuthMiddleware
 from fastapi.openapi.utils import get_openapi
 
@@ -35,6 +35,7 @@ app.add_middleware(AuthMiddleware)
 # Routers
 app.include_router(auth.router)
 app.include_router(tables.router)
+app.include_router(data.router)
 
 @app.get("/")
 async def root():
