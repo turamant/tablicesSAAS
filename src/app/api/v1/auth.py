@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlmodel.ext.asyncio.session import AsyncSession
+from src.app.api.dependencies import get_current_user_id
 from src.app.core.database import get_session
 from src.app.schemas.auth import UserLogin, UserRegister, UserResponse
 from src.app.services.auth_service import AuthService
 from src.app.models.user import User
-from datetime import datetime, timezone
+
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -113,15 +114,8 @@ async def logout(
 
 @router.get("/me", response_model=UserResponse)
 async def get_me(
-    request: Request,
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    user_id: str = Depends(get_current_user_id)  # <-- Чисто!
 ):
-    user_id = request.state.user_id if hasattr(request.state, "user_id") else None
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
     user = await session.get(User, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
     return user
