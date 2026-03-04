@@ -32,6 +32,12 @@ class TableCreate(BaseModel):
     description: Optional[str] = None
     fields: List[FieldCreate]
 
+
+class TableUpdate(BaseModel):
+    """Схема для обновления таблицы"""
+    name: Optional[str] = None
+    description: Optional[str] = None
+
 class TableResponse(BaseModel):
     id: UUID
     name: str

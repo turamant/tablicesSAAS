@@ -3,8 +3,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 from sqlalchemy.orm import selectinload
-from src.app.core.database import get_session
-from src.app.schemas.table import TableCreate, TableResponse
+from sqlalchemy import text
+from src.app.core.database import get_session, engine  # ← engine нужен!
+from src.app.schemas.table import TableCreate, TableResponse, TableUpdate  # ← импорт схемы!
 from src.app.services.table_service import TableService
 from src.app.models.table import Table
 from src.app.models.field import Field
@@ -54,16 +55,65 @@ async def get_table(
     if not table:
         raise HTTPException(status_code=404, detail="Table not found")
     
-    # ДОБАВЬ ЭТО
-    print(f"=== DEBUG ===")
-    print(f"user_id from token: '{user_id}'")
-    print(f"table.owner_id: '{table.owner_id}'")
-    print(f"str(table.owner_id): '{str(table.owner_id)}'")
-    print(f"len(user_id): {len(user_id)}")
-    print(f"len(str(owner_id)): {len(str(table.owner_id))}")
-    print(f"user_id == str(owner_id): {user_id == str(table.owner_id)}")
-    
-    if user_id != str(table.owner_id):
+    if str(table.owner_id) != user_id:
         raise HTTPException(status_code=403, detail="Not owner")
+    
+    return table
+
+
+@router.delete("/{table_id}")
+async def delete_table(
+    table_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    user_id: str = Depends(get_current_user_id)
+):
+    """Удалить таблицу"""
+    result = await session.execute(
+        select(Table).where(Table.id == table_id)
+    )
+    table = result.scalar_one_or_none()
+    
+    if not table:
+        raise HTTPException(status_code=404, detail="Table not found")
+    
+    if str(table.owner_id) != user_id:
+        raise HTTPException(status_code=403, detail="Not owner")
+    
+    # ПРОФЕССИОНАЛЬНО: через сервис, а не в контроллере!
+    await TableService.delete_table(session, table)
+    
+    return {"message": "Table deleted"}
+
+
+@router.patch("/{table_id}", response_model=TableResponse)
+async def update_table(
+    table_id: UUID,
+    table_data: TableUpdate,
+    session: AsyncSession = Depends(get_session),
+    user_id: str = Depends(get_current_user_id)
+):
+    """Обновить название/описание таблицы"""
+    # Загружаем таблицу С ПОЛЯМИ сразу!
+    result = await session.execute(
+        select(Table)
+        .where(Table.id == table_id)
+        .options(selectinload(Table.fields))  # ← ЭТО ВАЖНО!
+    )
+    table = result.scalar_one_or_none()
+    
+    if not table:
+        raise HTTPException(status_code=404, detail="Table not found")
+    
+    if str(table.owner_id) != user_id:
+        raise HTTPException(status_code=403, detail="Not owner")
+    
+    # Обновляем только переданные поля
+    if table_data.name is not None:
+        table.name = table_data.name
+    if table_data.description is not None:
+        table.description = table_data.description
+    
+    await session.commit()
+    await session.refresh(table)
     
     return table

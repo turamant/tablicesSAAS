@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { tablesApi, type Table, type CreateTableDto } from '@/core/api/user/tables'
+import { tablesApi, type Table, type CreateTableDto, type UpdateTableDto } from '@/core/api/user/tables'
 
 export const useTablesStore = defineStore('tables', () => {
   const tables = ref<Table[]>([])
@@ -25,8 +25,10 @@ export const useTablesStore = defineStore('tables', () => {
     try {
       const { data } = await tablesApi.getTable(id)
       currentTable.value = data
+      return data
     } catch (error) {
       console.error('Failed to fetch table:', error)
+      throw error
     } finally {
       isLoading.value = false
     }
@@ -46,6 +48,53 @@ export const useTablesStore = defineStore('tables', () => {
     }
   }
 
+  // НОВЫЙ МЕТОД: обновление таблицы
+  async function updateTable(id: string, data: UpdateTableDto) {
+    isLoading.value = true
+    try {
+      const { data: updatedTable } = await tablesApi.updateTable(id, data)
+      
+      // Обновляем в списке
+      const index = tables.value.findIndex(t => t.id === id)
+      if (index !== -1) {
+        tables.value[index] = updatedTable
+      }
+      
+      // Обновляем текущую таблицу если это она
+      if (currentTable.value?.id === id) {
+        currentTable.value = updatedTable
+      }
+      
+      return updatedTable
+    } catch (error) {
+      console.error('Failed to update table:', error)
+      throw error
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  // НОВЫЙ МЕТОД: удаление таблицы
+  async function deleteTable(id: string) {
+    isLoading.value = true
+    try {
+      await tablesApi.deleteTable(id)
+      
+      // Удаляем из списка
+      tables.value = tables.value.filter(t => t.id !== id)
+      
+      // Очищаем текущую таблицу если это она
+      if (currentTable.value?.id === id) {
+        currentTable.value = null
+      }
+    } catch (error) {
+      console.error('Failed to delete table:', error)
+      throw error
+    } finally {
+      isLoading.value = false
+    }
+  }
+
   return {
     tables,
     currentTable,
@@ -54,5 +103,7 @@ export const useTablesStore = defineStore('tables', () => {
     fetchTables,
     fetchTable,
     createTable,
+    updateTable,
+    deleteTable,
   }
 })

@@ -5,23 +5,19 @@ import type { User, LoginPayload, RegisterPayload } from '@/core/types/auth.type
 import router from '@/core/router'
 
 export const useAuthStore = defineStore('auth', () => {
-  // Состояние
   const user = ref<User | null>(null)
   const isLoading = ref(false)
   const initialized = ref(false)
 
-  // Геттеры
   const isAuthenticated = computed(() => !!user.value)
   const isSuperuser = computed(() => user.value?.is_superuser ?? false)
 
-  // Действия
   async function fetchMe() {
-    if (isLoading.value) return
-    
     isLoading.value = true
     try {
       const { data } = await authApi.me()
       user.value = data
+      console.log('fetchMe got user:', data)
     } catch (error) {
       user.value = null
     } finally {
@@ -34,14 +30,19 @@ export const useAuthStore = defineStore('auth', () => {
     isLoading.value = true
     try {
       await authApi.login(payload)
-      await fetchMe() // после логина получаем юзера
+      await fetchMe()
       
-      // Редирект в зависимости от роли
-      if (isSuperuser.value) {
-        await router.push('/admin')
+      console.log('Login completed, user:', user.value)
+      
+      if (user.value?.is_superuser) {
+        await router.replace('/admin')
       } else {
-        await router.push('/dashboard')
+        await router.replace('/dashboard')
       }
+      
+    } catch (error) {
+      console.error('Login failed:', error)
+      throw error
     } finally {
       isLoading.value = false
     }
@@ -52,32 +53,34 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       await authApi.register(payload)
       await login({ email: payload.email, password: payload.password })
+    } catch (error) {
+      console.error('Register failed:', error)
+      throw error
     } finally {
       isLoading.value = false
     }
   }
 
+  // ВОТ СУКА ЛОГАУТ - ВЕРНУЛ!
   async function logout() {
     try {
       await authApi.logout()
     } finally {
       user.value = null
+      initialized.value = false
       await router.push('/login')
     }
   }
 
   return {
-    // state
     user,
     isLoading,
     initialized,
-    // getters
     isAuthenticated,
     isSuperuser,
-    // actions
     fetchMe,
     login,
     register,
-    logout,
+    logout,  // ← ВЕРНУЛ В ЭКСПОРТ
   }
 })

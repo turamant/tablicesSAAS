@@ -1,3 +1,4 @@
+from datetime import date, datetime
 from sqlalchemy import text
 from src.app.core.database import engine
 from src.app.models.table import Table
@@ -31,45 +32,60 @@ class DataService:
     @staticmethod
     async def validate_data(table: Table, fields: List[Field], data: Dict[str, Any]) -> Dict[str, Any]:
         """Валидирует и преобразует данные под типы полей"""
-        # Создаем маппинг имени поля на объект Field
         field_by_name = {f.name: f for f in fields}
         field_by_id = {str(f.id): f for f in fields}
         
         validated = {}
         
         for key, value in data.items():
-            # Пробуем найти поле по имени
-            field = field_by_name.get(key)
-            
-            # Если не нашли по имени, пробуем по ID
-            if not field:
-                field = field_by_id.get(key)
+            field = field_by_name.get(key) or field_by_id.get(key)
             
             if not field:
                 raise ValueError(f"Field '{key}' not found in table")
             
             col_name = f"field_{field.id.hex}"
             
-            # Валидация по типу
             if value is None:
                 if field.is_required:
                     raise ValueError(f"Field {field.name} is required")
                 validated[col_name] = None
                 continue
             
-            if field.field_type in ["text", "email", "select"]:
+            # ========== ИСПРАВЛЕНО: ОБРАБОТКА ДАТ ==========
+            if field.field_type == "date":
+                try:
+                    # Если пришла строка в формате YYYY-MM-DD
+                    if isinstance(value, str):
+                        if value == "":
+                            validated[col_name] = None
+                        else:
+                            # Конвертируем строку в объект date
+                            validated[col_name] = datetime.strptime(value, "%Y-%m-%d").date()
+                    # Если уже date или datetime
+                    elif isinstance(value, (datetime, date)):
+                        validated[col_name] = value
+                    else:
+                        raise ValueError(f"Invalid date format for field {field.name}")
+                except Exception as e:
+                    raise ValueError(f"Invalid date format for field {field.name}: {value}")
+            
+            elif field.field_type in ["text", "email", "select"]:
                 validated[col_name] = str(value)
+            
             elif field.field_type == "number":
                 try:
                     validated[col_name] = float(value)
                 except ValueError:
                     raise ValueError(f"Field {field.name} must be a number")
+            
             elif field.field_type == "boolean":
                 validated[col_name] = bool(value)
-            elif field.field_type == "date":
-                validated[col_name] = str(value)
+            
             elif field.field_type == "multiselect":
                 validated[col_name] = json.dumps(value) if isinstance(value, list) else str(value)
+            
+            else:
+                validated[col_name] = str(value)
         
         return validated
 

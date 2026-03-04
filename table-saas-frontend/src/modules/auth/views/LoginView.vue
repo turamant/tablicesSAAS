@@ -72,13 +72,6 @@ async function handleSubmit() {
         >
           {{ auth.isLoading ? 'Loading...' : 'Sign in' }}
         </button>
-        
-        <p class="text-center text-sm text-gray-600">
-          Don't have an account?
-          <router-link to="/register" class="text-blue-600 hover:underline">
-            Register
-          </router-link>
-        </p>
       </form>
     </div>
   </div>

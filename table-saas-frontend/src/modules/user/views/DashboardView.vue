@@ -4,14 +4,54 @@ import { useAuthStore } from '@/core/stores/auth'
 import { useTablesStore } from '@/modules/user/stores/tables.store'
 import { RouterLink } from 'vue-router'
 import CreateTableModal from '@/modules/user/components/CreateTableModal.vue'
+import EditTableModal from '@/modules/user/components/EditTableModal.vue'
+import type { Table } from '@/core/api/user/tables'
 
 const auth = useAuthStore()
 const tablesStore = useTablesStore()
 const showCreateModal = ref(false)
+const tableToDelete = ref<string | null>(null)
+const showDeleteConfirm = ref(false)
+const showEditModal = ref(false)
+const editingTable = ref<Table | null>(null)
 
 onMounted(() => {
   tablesStore.fetchTables()
 })
+
+function confirmDelete(tableId: string, tableName: string) {
+  tableToDelete.value = tableId
+  showDeleteConfirm.value = true
+}
+
+async function handleDelete() {
+  if (!tableToDelete.value) return
+  
+  try {
+    await tablesStore.deleteTable(tableToDelete.value)
+    showDeleteConfirm.value = false
+    tableToDelete.value = null
+  } catch (error) {
+    console.error('Failed to delete table:', error)
+  }
+}
+
+function editTable(table: Table) {
+  editingTable.value = table
+  showEditModal.value = true
+}
+
+async function handleEditSave(data: { name: string; description: string }) {
+  if (!editingTable.value) return
+  
+  try {
+    await tablesStore.updateTable(editingTable.value.id, data)
+    showEditModal.value = false
+    editingTable.value = null
+  } catch (error) {
+    console.error('Failed to update table:', error)
+  }
+}
 </script>
 
 <template>
@@ -49,19 +89,39 @@ onMounted(() => {
 
     <!-- Tables Grid -->
     <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      <RouterLink
+      <div
         v-for="table in tablesStore.tables"
         :key="table.id"
-        :to="`/dashboard/tables/${table.id}`"
-        class="block p-4 bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow border border-gray-200"
+        class="block bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow border border-gray-200"
       >
-        <h3 class="text-lg font-semibold mb-2">{{ table.name }}</h3>
-        <p class="text-gray-600 text-sm mb-3 line-clamp-2">{{ table.description || 'No description' }}</p>
-        <div class="flex justify-between text-xs text-gray-500">
-          <span>{{ table.fields?.length || 0 }} fields</span>
-          <span>{{ new Date(table.created_at).toLocaleDateString() }}</span>
+        <RouterLink
+          :to="`/dashboard/tables/${table.id}`"
+          class="block p-4"
+        >
+          <h3 class="text-lg font-semibold mb-2">{{ table.name }}</h3>
+          <p class="text-gray-600 text-sm mb-3 line-clamp-2">{{ table.description || 'No description' }}</p>
+          <div class="flex justify-between text-xs text-gray-500">
+            <span>{{ table.fields?.length || 0 }} fields</span>
+            <span>{{ new Date(table.created_at).toLocaleDateString() }}</span>
+          </div>
+        </RouterLink>
+        
+        <!-- Actions -->
+        <div class="border-t border-gray-200 px-4 py-2 flex justify-end gap-2">
+          <button
+            @click="editTable(table)"
+            class="text-sm text-blue-600 hover:text-blue-800"
+          >
+            Edit
+          </button>
+          <button
+            @click="confirmDelete(table.id, table.name)"
+            class="text-sm text-red-600 hover:text-red-800"
+          >
+            Delete
+          </button>
         </div>
-      </RouterLink>
+      </div>
     </div>
 
     <!-- Create Table Modal -->
@@ -69,6 +129,43 @@ onMounted(() => {
       :show="showCreateModal"
       @close="showCreateModal = false"
       @created="tablesStore.fetchTables()"
+    />
+
+    <!-- Delete Confirmation Modal -->
+    <Teleport to="body">
+      <div v-if="showDeleteConfirm" class="fixed inset-0 z-50 overflow-y-auto">
+        <div class="fixed inset-0 bg-black/50" @click="showDeleteConfirm = false"></div>
+        <div class="relative min-h-screen flex items-center justify-center p-4">
+          <div class="relative bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+            <h3 class="text-lg font-semibold mb-2">Delete Table</h3>
+            <p class="text-gray-600 mb-6">
+              Are you sure you want to delete this table? All data will be permanently lost.
+            </p>
+            <div class="flex justify-end gap-3">
+              <button
+                @click="showDeleteConfirm = false"
+                class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                @click="handleDelete"
+                class="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Edit Table Modal -->
+    <EditTableModal
+      :show="showEditModal"
+      :table="editingTable"
+      @close="showEditModal = false"
+      @save="handleEditSave"
     />
   </div>
 </template>

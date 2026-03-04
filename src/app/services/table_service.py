@@ -2,7 +2,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy import text
 from src.app.models.table import Table
 from src.app.models.field import Field
-from src.app.schemas.table import TableCreate
+from src.app.schemas.table import TableCreate, TableUpdate
 from src.app.core.database import engine
 import uuid
 import re
@@ -86,3 +86,27 @@ class TableService:
         await session.refresh(db_table)
         
         return db_table
+    
+    @classmethod
+    async def delete_table(cls, session: AsyncSession, table: Table):
+        """Удаляет таблицу (мета и физическую)"""
+        # Удаляем физическую таблицу
+        async with engine.connect() as conn:
+            await conn.execute(text(f"DROP TABLE IF EXISTS {table.physical_name}"))
+            await conn.commit()
+        
+        # Удаляем мета-запись (поля удалятся каскадно)
+        await session.delete(table)
+        await session.commit()
+
+    @classmethod
+    async def update_table(cls, session: AsyncSession, table: Table, table_data: TableUpdate) -> Table:
+        """Обновляет мета-данные таблицы"""
+        if table_data.name is not None:
+            table.name = table_data.name
+        if table_data.description is not None:
+            table.description = table_data.description
+        
+        await session.commit()
+        await session.refresh(table)
+        return table

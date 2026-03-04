@@ -38,8 +38,16 @@ export interface CreateTableDto {
   fields: CreateFieldDto[]
 }
 
+export interface UpdateTableDto {
+  name?: string
+  description?: string
+  // Поля таблицы редактируются отдельно
+}
+
 export const tablesApi = {
   getTables: () => apiClient.get<Table[]>('/tables'),
   getTable: (id: string) => apiClient.get<Table>(`/tables/${id}`),
   createTable: (data: CreateTableDto) => apiClient.post<Table>('/tables', data),
+  updateTable: (id: string, data: UpdateTableDto) => apiClient.patch<Table>(`/tables/${id}`, data),
+  deleteTable: (id: string) => apiClient.delete(`/tables/${id}`),
 }
