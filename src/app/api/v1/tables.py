@@ -1,3 +1,4 @@
+from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
@@ -36,9 +37,10 @@ async def list_tables(
     tables = result.scalars().all()
     return tables
 
+
 @router.get("/{table_id}", response_model=TableResponse)
 async def get_table(
-    table_id: str,
+    table_id: UUID,
     session: AsyncSession = Depends(get_session),
     user_id: str = Depends(get_current_user_id)
 ):
@@ -52,7 +54,16 @@ async def get_table(
     if not table:
         raise HTTPException(status_code=404, detail="Table not found")
     
-    if table.owner_id != user_id:
+    # ДОБАВЬ ЭТО
+    print(f"=== DEBUG ===")
+    print(f"user_id from token: '{user_id}'")
+    print(f"table.owner_id: '{table.owner_id}'")
+    print(f"str(table.owner_id): '{str(table.owner_id)}'")
+    print(f"len(user_id): {len(user_id)}")
+    print(f"len(str(owner_id)): {len(str(table.owner_id))}")
+    print(f"user_id == str(owner_id): {user_id == str(table.owner_id)}")
+    
+    if user_id != str(table.owner_id):
         raise HTTPException(status_code=403, detail="Not owner")
     
     return table

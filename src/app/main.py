@@ -1,9 +1,19 @@
 from fastapi import FastAPI
 from src.app.api.v1 import auth, tables, data
+from fastapi.middleware.cors import CORSMiddleware
 from src.app.middleware.auth_middleware import AuthMiddleware
 from fastapi.openapi.utils import get_openapi
 
 app = FastAPI(title="Table SaaS", version="0.1.0")
+
+# CORS — ЭТО РЕШЕНИЕ!
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],  # твой фронт
+    allow_credentials=True,  # обязательно для кук!
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Добавляем схему для cookie
 def custom_openapi():

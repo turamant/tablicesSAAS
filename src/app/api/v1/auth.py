@@ -1,10 +1,14 @@
+
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from sqlalchemy import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from src.app.api.dependencies import get_current_user_id
 from src.app.core.database import get_session
 from src.app.schemas.auth import UserLogin, UserRegister, UserResponse
 from src.app.services.auth_service import AuthService
 from src.app.models.user import User
+from src.app.models.refresh_token import RefreshToken
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -119,3 +123,45 @@ async def get_me(
 ):
     user = await session.get(User, user_id)
     return user
+
+
+
+@router.post("/refresh")
+async def refresh_token(
+    request: Request,
+    response: Response,
+    session: AsyncSession = Depends(get_session)
+):
+    refresh_token = request.cookies.get("refresh_token")
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="No refresh token")
+    
+    # Ищем в БД
+    result = await session.execute(
+        select(RefreshToken).where(
+            RefreshToken.token == refresh_token,
+            RefreshToken.is_revoked == False,
+            RefreshToken.expires_at > datetime.now(timezone.utc)
+        )
+    )
+    token_record = result.scalar_one_or_none()
+    
+    if not token_record:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+    
+    # Создаем новый access_token
+    new_access = AuthService.create_access_token(
+        {"sub": str(token_record.user_id)}
+    )
+    
+    response.set_cookie(
+        key="access_token",
+        value=new_access,
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=900,
+        path="/"
+    )
+    
+    return {"message": "Token refreshed"}
