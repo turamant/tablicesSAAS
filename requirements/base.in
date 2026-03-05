@@ -20,3 +20,6 @@ pydantic-settings>=2.0.0
 
 # Утилиты
 python-dotenv>=1.0.0
+
+openpyxl
+pandas

@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from src.app.api.v1 import auth, tables, data, fields
+from src.app.api.v1 import auth, tables, data, fields, aggregate, group, export, import_data
 from fastapi.middleware.cors import CORSMiddleware
 from src.app.middleware.auth_middleware import AuthMiddleware
 from fastapi.openapi.utils import get_openapi
@@ -47,6 +47,10 @@ app.include_router(auth.router)
 app.include_router(tables.router)
 app.include_router(data.router)
 app.include_router(fields.router)
+app.include_router(aggregate.router)
+app.include_router(group.router)
+app.include_router(export.router)
+app.include_router(import_data.router)
 
 @app.get("/")
 async def root():

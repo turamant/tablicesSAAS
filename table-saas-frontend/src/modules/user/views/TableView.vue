@@ -8,6 +8,7 @@ import DataGrid from '@/modules/user/components/DataGrid.vue'
 import RecordModal from '@/modules/user/components/RecordModal.vue'
 import EditFieldsModal from '@/modules/user/components/EditFieldsModal.vue'
 import type { TableRecord } from '@/core/api/user/records'
+import ImportExcelModal from '@/modules/user/components/ImportExcelModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -15,11 +16,13 @@ const authStore = useAuthStore()
 const tablesStore = useTablesStore()
 const recordsStore = useRecordsStore()
 
+
 // Используем computed для tableId
 const tableId = ref(route.params.id as string)
 const showRecordModal = ref(false)
 const showEditFieldsModal = ref(false)
 const editingRecord = ref<TableRecord | null>(null)
+const showImportModal = ref(false)
 
 // Функция загрузки всех данных
 async function loadTableData() {
@@ -35,6 +38,21 @@ async function loadTableData() {
   } catch (error) {
     console.error('Failed to load:', error)
   }
+}
+
+async function exportToExcel() {
+  const url = `${import.meta.env.VITE_API_URL}/tables/${tableId.value}/export/excel?include_aggregations=true`
+  
+  // Просто открываем в новой вкладке (скачается файл)
+  window.open(url, '_blank')
+  
+  // Или через fetch:
+  // const response = await fetch(url, { credentials: 'include' })
+  // const blob = await response.blob()
+  // const link = document.createElement('a')
+  // link.href = URL.createObjectURL(blob)
+  // link.download = `${tablesStore.currentTable?.name}.xlsx`
+  // link.click()
 }
 
 onMounted(async () => {
@@ -136,6 +154,29 @@ async function handleFieldsUpdated() {
           </svg>
           Add Record
         </button>
+
+        <!-- Кнопка экспорта exel -->
+        <button
+          @click="exportToExcel"
+          class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
+        >
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          Export Excel
+        </button>
+
+        <!-- Кнопка импорта -->
+        <button
+          @click="showImportModal = true"
+          class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2"
+        >
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+          </svg>
+          Import Excel
+        </button>
+
       </div>
     </div>
 
@@ -171,6 +212,14 @@ async function handleFieldsUpdated() {
       :table="tablesStore.currentTable"
       @close="showEditFieldsModal = false"
       @updated="handleFieldsUpdated"
+    />
+
+    <!-- Модалка импорта -->
+    <ImportExcelModal
+      :show="showImportModal"
+      :table="tablesStore.currentTable"
+      @close="showImportModal = false"
+      @imported="loadTableData"
     />
   </div>
 </template>
