@@ -4,27 +4,29 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/core/stores/auth'
 import { useTablesStore } from '@/modules/user/stores/tables.store'
 import { useRecordsStore } from '@/modules/user/stores/records.store'
+import { useViewsStore } from '@/modules/user/stores/views.store'
 import DataGrid from '@/modules/user/components/DataGrid.vue'
 import RecordModal from '@/modules/user/components/RecordModal.vue'
 import EditFieldsModal from '@/modules/user/components/EditFieldsModal.vue'
-import type { TableRecord } from '@/core/api/user/records'
 import ImportExcelModal from '@/modules/user/components/ImportExcelModal.vue'
+import ViewSwitcher from '@/modules/user/components/ViewSwitcher.vue'
+import KanbanView from '@/modules/user/components/KanbanView.vue'
+import type { TableRecord } from '@/core/api/user/records'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const tablesStore = useTablesStore()
 const recordsStore = useRecordsStore()
+const viewsStore = useViewsStore()
 
-
-// Используем computed для tableId
 const tableId = ref(route.params.id as string)
 const showRecordModal = ref(false)
 const showEditFieldsModal = ref(false)
-const editingRecord = ref<TableRecord | null>(null)
 const showImportModal = ref(false)
+const editingRecord = ref<TableRecord | null>(null)
 
-// Функция загрузки всех данных
+// Загрузка всех данных
 async function loadTableData() {
   console.log('Loading table data for:', tableId.value)
   
@@ -40,33 +42,71 @@ async function loadTableData() {
   }
 }
 
+// Экспорт в Excel
 async function exportToExcel() {
   const url = `${import.meta.env.VITE_API_URL}/tables/${tableId.value}/export/excel?include_aggregations=true`
-  
-  // Просто открываем в новой вкладке (скачается файл)
   window.open(url, '_blank')
-  
-  // Или через fetch:
-  // const response = await fetch(url, { credentials: 'include' })
-  // const blob = await response.blob()
-  // const link = document.createElement('a')
-  // link.href = URL.createObjectURL(blob)
-  // link.download = `${tablesStore.currentTable?.name}.xlsx`
-  // link.click()
 }
 
+// Инициализация
 onMounted(async () => {
-  await loadTableData()
+  // Сначала загружаем таблицу
+  await tablesStore.fetchTable(tableId.value)
+  
+  // Потом загружаем виды
+  await viewsStore.fetchViews(tableId.value)
+  
+  // Если видов нет - создаем дефолтные
+  if (viewsStore.views.length === 0 && tablesStore.currentTable) {
+    // Создаем Grid вид
+    await viewsStore.createView(tableId.value, {
+      name: 'Grid',
+      type: 'grid',
+      table_id: tableId.value,
+      settings: {},
+      is_default: true
+    })
+    
+    // Находим select поле для канбана
+    const statusField = tablesStore.currentTable.fields.find(
+      f => f.field_type === 'select' || f.name.toLowerCase().includes('status')
+    )
+    
+    if (statusField) {
+      await viewsStore.createView(tableId.value, {
+        name: 'Kanban',
+        type: 'kanban',
+        table_id: tableId.value,
+        settings: {
+          kanban_group_field: statusField.name,
+          card_fields: ['title', 'description'].filter(f => 
+            tablesStore.currentTable?.fields.some(fld => fld.name === f)
+          )
+        },
+        is_default: false
+      })
+    }
+    
+    // Перезагружаем виды
+    await viewsStore.fetchViews(tableId.value)
+  }
+  
+  // Загружаем записи
+  if (tablesStore.currentTable) {
+    await recordsStore.fetchRecords(tableId.value)
+  }
 })
 
-// Следим за изменением параметра в роуте
+// Следим за изменением параметра
 watch(() => route.params.id, async (newId) => {
   if (newId) {
     tableId.value = newId as string
+    await viewsStore.fetchViews(tableId.value)
     await loadTableData()
   }
 })
 
+// Сортировка
 function handleSort(sort: string) {
   const [field, direction] = sort.split(':')
   recordsStore.fetchRecords(tableId.value, {
@@ -75,6 +115,7 @@ function handleSort(sort: string) {
   })
 }
 
+// CRUD записей
 function addRecord() {
   editingRecord.value = null
   showRecordModal.value = true
@@ -105,11 +146,10 @@ async function deleteRecord(recordId: string) {
   }
 }
 
-// После редактирования полей перезагружаем таблицу
+// После редактирования полей
 async function handleFieldsUpdated() {
   console.log('Fields updated, reloading table...')
   await loadTableData()
-  // Модалка закроется автоматически по @close
 }
 </script>
 
@@ -131,7 +171,7 @@ async function handleFieldsUpdated() {
       </div>
       
       <div class="flex gap-2">
-        <!-- Кнопка редактирования полей -->
+        <!-- Edit Fields -->
         <button
           v-if="tablesStore.currentTable"
           @click="showEditFieldsModal = true"
@@ -143,7 +183,7 @@ async function handleFieldsUpdated() {
           Edit Fields
         </button>
         
-        <!-- Кнопка добавления записи -->
+        <!-- Add Record -->
         <button
           v-if="tablesStore.currentTable"
           @click="addRecord"
@@ -155,7 +195,7 @@ async function handleFieldsUpdated() {
           Add Record
         </button>
 
-        <!-- Кнопка экспорта exel -->
+        <!-- Export Excel -->
         <button
           @click="exportToExcel"
           class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
@@ -166,7 +206,7 @@ async function handleFieldsUpdated() {
           Export Excel
         </button>
 
-        <!-- Кнопка импорта -->
+        <!-- Import Excel -->
         <button
           @click="showImportModal = true"
           class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2"
@@ -176,19 +216,25 @@ async function handleFieldsUpdated() {
           </svg>
           Import Excel
         </button>
-
       </div>
     </div>
 
+    <!-- View Switcher - показываем всегда, если есть таблица -->
+    <ViewSwitcher
+      v-if="tablesStore.currentTable"
+      :table-id="tableId"
+      :table-fields="tablesStore.currentTable.fields"
+    />
+
     <!-- Loading state -->
     <div v-if="!tablesStore.currentTable" class="text-center py-12">
-      <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-gray-300 border-t-blue-600"></div>
+      <div class="animate-spin h-8 w-8 border-4 border-gray-300 border-t-blue-600 rounded-full mx-auto"></div>
       <p class="mt-2 text-gray-600">Loading table...</p>
     </div>
 
-    <!-- Data Grid -->
+    <!-- Grid View -->
     <DataGrid
-      v-else
+      v-else-if="viewsStore.currentView?.type === 'grid' || !viewsStore.currentView"
       :table="tablesStore.currentTable"
       :records="recordsStore.records"
       :loading="recordsStore.isLoading"
@@ -196,6 +242,27 @@ async function handleFieldsUpdated() {
       @delete="deleteRecord"
       @sort="handleSort"
     />
+
+    <!-- Kanban View -->
+    <KanbanView
+      v-else-if="viewsStore.currentView?.type === 'kanban'"
+      :key="viewsStore.currentView?.id"  
+      :table="tablesStore.currentTable"
+      :records="recordsStore.records"
+      :group-field="viewsStore.currentView.settings.kanban_group_field || 'status'"
+      :card-fields="viewsStore.currentView.settings.card_fields"
+      @card-click="editRecord"
+    />
+
+    <!-- Calendar View (заглушка) -->
+    <div v-else-if="viewsStore.currentView?.type === 'calendar'" class="text-center py-12 text-gray-500">
+      Calendar view coming soon...
+    </div>
+
+    <!-- Gallery View (заглушка) -->
+    <div v-else-if="viewsStore.currentView?.type === 'gallery'" class="text-center py-12 text-gray-500">
+      Gallery view coming soon...
+    </div>
 
     <!-- Record Modal -->
     <RecordModal
@@ -214,7 +281,7 @@ async function handleFieldsUpdated() {
       @updated="handleFieldsUpdated"
     />
 
-    <!-- Модалка импорта -->
+    <!-- Import Modal -->
     <ImportExcelModal
       :show="showImportModal"
       :table="tablesStore.currentTable"

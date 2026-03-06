@@ -4,6 +4,7 @@ from .table import Table
 from .field import Field
 from .refresh_token import RefreshToken
 from .share import TableShare
+from .view import View
 
 __all__ = [
     "User",
@@ -13,4 +14,5 @@ __all__ = [
     "TableShare",
     "SharePermission",
     "FieldType",
+    "View"
 ]

@@ -14,24 +14,33 @@ const emit = defineEmits<{
 }>()
 
 // Состояния
-const step = ref(1) // 1: загрузка файла, 2: маппинг полей
+const step = ref(1)
 const file = ref<File | null>(null)
 const preview = ref<any>(null)
 const mappings = ref<any[]>([])
 const loading = ref(false)
 const error = ref('')
 const importResult = ref<any>(null)
+const selectedFields = ref<string[]>([])
+const createMissingFields = ref(false)
 
-// Загрузка файла
+// 🔥 Нормализация имени поля (должна совпадать с бэкендом!)
+function normalizeFieldName(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9а-яё_]/gi, '_')  // ✅ кириллица + латиница
+    .replace(/_+/g, '_')                // убираем дубли __
+    .replace(/^_|_$/g, '')              // обрезает крайние _
+}
+
 async function handleFileUpload(event: Event) {
   const input = event.target as HTMLInputElement
   const files = input.files
   if (!files || files.length === 0) return
   
-  // Принудительное приведение к File
   file.value = files[0] as File
   error.value = ''
-  
   await uploadAndPreview()
 }
 
@@ -48,6 +57,12 @@ async function uploadAndPreview() {
     const response = await importApi.preview(props.table.id, formData)
     preview.value = response.data
     mappings.value = response.data.suggested_mappings
+    
+    // Авто-выбор полей с совпадениями
+    selectedFields.value = mappings.value
+      .filter(m => m.table_field)
+      .map(m => m.excel_column)
+    
     step.value = 2
   } catch (err: any) {
     error.value = err.response?.data?.detail || 'Failed to preview file'
@@ -56,18 +71,46 @@ async function uploadAndPreview() {
   }
 }
 
-// Обновление маппинга
-function updateMapping(index: number, field: string) {
-  mappings.value[index].table_field = field
+function toggleField(excelColumn: string) {
+  if (selectedFields.value.includes(excelColumn)) {
+    selectedFields.value = selectedFields.value.filter(f => f !== excelColumn)
+  } else {
+    selectedFields.value.push(excelColumn)
+  }
 }
 
-function toggleSkip(index: number) {
-  mappings.value[index].skip = !mappings.value[index].skip
+function selectAll() {
+  selectedFields.value = mappings.value.map(m => m.excel_column)
 }
 
-// Выполнить импорт
+function selectNone() {
+  selectedFields.value = []
+}
+
+function updateFieldMapping(index: number, fieldName: string) {
+  mappings.value[index].table_field = fieldName
+}
+
 async function doImport() {
   if (!file.value || !props.table) return
+  
+  const selectedMappings = mappings.value
+    .filter(m => selectedFields.value.includes(m.excel_column))
+    .map(m => {
+      // Генерация технического имени (совпадает с бэкендом!)
+      const techName = normalizeFieldName(m.excel_column)
+      
+      return {
+        excel_column: m.excel_column,
+        table_field: m.table_field || techName,
+        skip: false
+      }
+    })
+  
+  if (selectedMappings.length === 0) {
+    alert('Выберите хотя бы одно поле для импорта')
+    return
+  }
   
   loading.value = true
   error.value = ''
@@ -75,15 +118,13 @@ async function doImport() {
   try {
     const formData = new FormData()
     formData.append('file', file.value)
-    
-    // Отправляем mappings как JSON строку
-    formData.append('mappings', JSON.stringify(mappings.value))
+    formData.append('mappings', JSON.stringify(selectedMappings))
     formData.append('skip_first_row', 'true')
-    formData.append('create_missing_fields', 'false')
+    formData.append('create_missing_fields', String(createMissingFields.value))
     
     const response = await importApi.import(props.table.id, formData)
     importResult.value = response.data
-    step.value = 3  // добавить step 3 для результатов
+    step.value = 3
   } catch (err: any) {
     error.value = err.response?.data?.detail || 'Failed to import'
     console.error('Import error:', err.response?.data)
@@ -92,7 +133,6 @@ async function doImport() {
   }
 }
 
-// Закрыть и сбросить
 function closeModal() {
   step.value = 1
   file.value = null
@@ -100,10 +140,11 @@ function closeModal() {
   mappings.value = []
   error.value = ''
   importResult.value = null
+  selectedFields.value = []
+  createMissingFields.value = false
   emit('close')
 }
 
-// Завершить импорт
 function finishImport() {
   emit('imported')
   closeModal()
@@ -181,6 +222,25 @@ function finishImport() {
             
             <!-- Step 2: Mapping -->
             <div v-else-if="step === 2 && preview" class="space-y-6">
+              <!-- Кнопки выбора всех полей -->
+              <div class="flex justify-between items-center">
+                <h4 class="font-medium">Fields to import</h4>
+                <div class="flex gap-2">
+                  <button 
+                    @click="selectAll"
+                    class="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200"
+                  >
+                    Select All
+                  </button>
+                  <button 
+                    @click="selectNone"
+                    class="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200"
+                  >
+                    Clear All
+                  </button>
+                </div>
+              </div>
+              
               <!-- Preview data -->
               <div>
                 <h4 class="font-medium mb-2">Preview (first 5 rows)</h4>
@@ -211,26 +271,52 @@ function finishImport() {
                 <div class="space-y-2">
                   <div v-for="(m, index) in mappings" :key="index" 
                        class="flex items-center gap-3 p-2 bg-gray-50 rounded-lg">
+                    <!-- Checkbox для выбора поля -->
                     <input
                       type="checkbox"
-                      :checked="!m.skip"
-                      @change="toggleSkip(index)"
-                      class="rounded border-gray-300"
+                      :checked="selectedFields.includes(m.excel_column)"
+                      @change="toggleField(m.excel_column)"
+                      class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                     />
-                    <span class="w-1/3 font-mono text-sm">{{ m.excel_column }}</span>
+                    
+                    <span class="w-1/3 font-mono text-sm font-medium">{{ m.excel_column }}</span>
                     <span class="text-gray-400">→</span>
-                    <select
-                      v-model="m.table_field"
-                      :disabled="m.skip"
-                      class="flex-1 px-2 py-1 border rounded-lg text-sm"
-                    >
-                      <option value="">— Skip —</option>
-                      <option v-for="field in table?.fields" :key="field.id" :value="field.name">
-                        {{ field.display_name }} ({{ field.name }})
-                      </option>
-                    </select>
+                    
+                    <!-- Выбор существующего поля или создание нового -->
+                    <div class="flex-1 flex gap-2 items-center">
+                      <select
+                        v-model="m.table_field"
+                        @change="updateFieldMapping(index, m.table_field)"
+                        class="flex-1 px-2 py-1 border rounded-lg text-sm"
+                        :disabled="!selectedFields.includes(m.excel_column)"
+                      >
+                        <option value="">— Create new field —</option>
+                        <option v-for="field in table?.fields" :key="field.id" :value="field.name">
+                          {{ field.display_name }} ({{ field.name }})
+                        </option>
+                      </select>
+                      
+                      <!-- ✅ ИСПРАВЛЕНО: превью с поддержкой кириллицы -->
+                      <div v-if="!m.table_field && selectedFields.includes(m.excel_column)" 
+                           class="text-xs text-gray-500 self-center whitespace-nowrap">
+                        будет создано как "<span class="font-mono text-blue-600">{{ normalizeFieldName(m.excel_column) }}</span>"
+                      </div>
+                    </div>
                   </div>
                 </div>
+              </div>
+
+              <!-- Чекбокс создания полей -->
+              <div class="flex items-center gap-2 pt-2 border-t border-gray-200">
+                <input
+                  type="checkbox"
+                  id="createMissingFields"
+                  v-model="createMissingFields"
+                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <label for="createMissingFields" class="text-sm text-gray-700 cursor-pointer">
+                  Создавать недостающие поля автоматически
+                </label>
               </div>
             </div>
             
@@ -272,10 +358,10 @@ function finishImport() {
             <button
               v-if="step === 2 && !importResult"
               @click="doImport"
-              :disabled="loading"
-              class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              :disabled="loading || selectedFields.length === 0"
+              class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {{ loading ? 'Importing...' : 'Import Data' }}
+              {{ loading ? 'Importing...' : `Import ${selectedFields.length} fields` }}
             </button>
             
             <button

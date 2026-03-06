@@ -8,6 +8,7 @@ if TYPE_CHECKING:
     from .user import User
     from .field import Field
     from .share import TableShare
+    from .view import View
 
 class Table(SQLModel, table=True):
     __tablename__ = "tables"
@@ -33,5 +34,15 @@ class Table(SQLModel, table=True):
     
     # Relationships
     owner: "User" = Relationship(back_populates="tables")
-    fields: List["Field"] = Relationship(back_populates="table", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
-    shares: List["TableShare"] = Relationship(back_populates="table", sa_relationship_kwargs={"cascade": "all, delete-orphan"})
+    fields: List["Field"] = Relationship(
+        back_populates="table", 
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    shares: List["TableShare"] = Relationship(
+        back_populates="table", 
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    views: List["View"] = Relationship(
+        back_populates="table", 
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
