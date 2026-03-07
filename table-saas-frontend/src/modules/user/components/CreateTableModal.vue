@@ -70,6 +70,13 @@ const fieldTypes = [
     description: 'Email address',
     color: 'bg-indigo-50 text-indigo-700 border-indigo-200'
   },
+  { 
+    value: 'formula', 
+    label: 'Formula',
+    icon: 'ƒ',
+    description: 'Calculated field',
+    color: 'bg-purple-50 text-purple-700 border-purple-200'
+  },
 ]
 
 // Начальная форма
@@ -100,6 +107,10 @@ const isFieldsValid = computed(() => {
     if (!field.name.trim()) return false
     if (field.field_type === 'select' || field.field_type === 'multiselect') {
       return field.options?.choices?.length > 0
+    }
+        // 👇 ДЛЯ FORMULA - проверка что формула есть
+        if (field.field_type === 'formula') {
+      return field.options?.formula?.trim() !== ''
     }
     return true
   })

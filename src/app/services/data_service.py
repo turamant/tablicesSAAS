@@ -31,12 +31,19 @@ class DataService:
 
     @staticmethod
     async def validate_data(table: Table, fields: List[Field], data: Dict[str, Any]) -> Dict[str, Any]:
-        """Валидирует и преобразует данные под типы полей"""
+        """
+        Валидирует и преобразует данные под типы полей.
+        Formula поля вычисляются отдельно.
+        """
+        from src.app.services.formula_service import FormulaService
+        
         field_by_name = {f.name: f for f in fields}
         field_by_id = {str(f.id): f for f in fields}
         
         validated = {}
+        print(f"🔍 Starting validation with data: {data}")
         
+        # Сначала обрабатываем обычные поля (не formula)
         for key, value in data.items():
             field = field_by_name.get(key) or field_by_id.get(key)
             
@@ -45,48 +52,135 @@ class DataService:
             
             col_name = f"field_{field.id.hex}"
             
+            # Пропускаем formula поля - они вычислятся позже
+            if field.field_type == "formula":
+                print(f"⏭️ Skipping formula field: {field.name}")
+                continue
+            
             if value is None:
                 if field.is_required:
                     raise ValueError(f"Field {field.name} is required")
                 validated[col_name] = None
                 continue
             
-            # ========== ИСПРАВЛЕНО: ОБРАБОТКА ДАТ ==========
+            # Обработка DATE
             if field.field_type == "date":
                 try:
-                    # Если пришла строка в формате YYYY-MM-DD
                     if isinstance(value, str):
                         if value == "":
                             validated[col_name] = None
                         else:
-                            # Конвертируем строку в объект date
-                            validated[col_name] = datetime.strptime(value, "%Y-%m-%d").date()
-                    # Если уже date или datetime
+                            # Пробуем разные форматы
+                            for fmt in ["%Y-%m-%d", "%d.%m.%Y", "%Y/%m/%d"]:
+                                try:
+                                    validated[col_name] = datetime.strptime(value, fmt).date()
+                                    print(f"✅ Date field {field.name}: {validated[col_name]}")
+                                    break
+                                except ValueError:
+                                    continue
+                            else:
+                                raise ValueError(f"Unsupported date format: {value}")
                     elif isinstance(value, (datetime, date)):
                         validated[col_name] = value
+                        print(f"✅ Date field {field.name}: {validated[col_name]}")
                     else:
-                        raise ValueError(f"Invalid date format for field {field.name}")
+                        raise ValueError(f"Invalid date type for field {field.name}")
                 except Exception as e:
                     raise ValueError(f"Invalid date format for field {field.name}: {value}")
             
+            # Обработка TEXT/EMAIL/SELECT
             elif field.field_type in ["text", "email", "select"]:
                 validated[col_name] = str(value)
+                print(f"✅ Text field {field.name}: {validated[col_name]}")
             
+            # Обработка NUMBER
             elif field.field_type == "number":
                 try:
+                    # Заменяем запятую на точку
+                    if isinstance(value, str):
+                        value = value.replace(',', '.')
                     validated[col_name] = float(value)
+                    print(f"✅ Number field {field.name}: {validated[col_name]}")
                 except ValueError:
                     raise ValueError(f"Field {field.name} must be a number")
             
+            # Обработка BOOLEAN
             elif field.field_type == "boolean":
-                validated[col_name] = bool(value)
+                if isinstance(value, str):
+                    validated[col_name] = value.lower() in ['true', 'yes', 'да', '1', '+', '✓']
+                else:
+                    validated[col_name] = bool(value)
+                print(f"✅ Boolean field {field.name}: {validated[col_name]}")
             
+            # Обработка MULTISELECT
             elif field.field_type == "multiselect":
-                validated[col_name] = json.dumps(value) if isinstance(value, list) else str(value)
+                if isinstance(value, list):
+                    validated[col_name] = json.dumps(value)
+                else:
+                    # Если пришла строка, пытаемся распарсить как JSON
+                    try:
+                        parsed = json.loads(value) if isinstance(value, str) else [str(value)]
+                        validated[col_name] = json.dumps(parsed)
+                    except:
+                        validated[col_name] = json.dumps([str(value)])
+                print(f"✅ Multiselect field {field.name}: {validated[col_name]}")
             
+            # Остальные типы
             else:
                 validated[col_name] = str(value)
+                print(f"✅ Other field {field.name}: {validated[col_name]}")
         
+        # Теперь вычисляем formula поля
+        print(f"🧪 Looking for formula fields...")
+        formula_fields = [f for f in fields if f.field_type == "formula"]
+        print(f"🧪 Found {len(formula_fields)} formula fields")
+        
+        for field in formula_fields:
+            if field.options and 'formula' in field.options:
+                formula = field.options['formula']
+                col_name = f"field_{field.id.hex}"
+                print(f"📐 Processing formula field: {field.name}, formula: {formula}")
+                print(f"📐 Column name: {col_name}")
+                
+                try:
+                    # Вычисляем формулу, передавая все данные (включая исходные)
+                    result = await FormulaService.evaluate(formula, data)
+                    print(f"🧮 Formula result for {field.name}: {result} (type: {type(result)})")
+                    
+                    # Преобразуем результат в зависимости от return_type
+                    return_type = field.options.get('return_type', 'string')
+                    print(f"📋 Return type: {return_type}")
+                    
+                    if result is not None:
+                        if return_type == 'number':
+                            try:
+                                validated[col_name] = float(result)
+                                print(f"✅ Stored as number: {validated[col_name]}")
+                            except (ValueError, TypeError):
+                                validated[col_name] = None
+                                print(f"❌ Failed to convert to number")
+                        elif return_type == 'string':
+                            validated[col_name] = str(result)
+                            print(f"✅ Stored as string: {validated[col_name]}")
+                        elif return_type == 'boolean':
+                            validated[col_name] = bool(result)
+                            print(f"✅ Stored as boolean: {validated[col_name]}")
+                        else:
+                            validated[col_name] = result
+                            print(f"✅ Stored as is: {validated[col_name]}")
+                    else:
+                        validated[col_name] = None
+                        print(f"⚠️ Result is None, storing None")
+                        
+                except Exception as e:
+                    print(f"❌ Formula error for {field.name}: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    validated[col_name] = None
+            else:
+                print(f"⚠️ Formula field {field.name} has no options or formula")
+        
+        print(f"📦 Final validated data: {validated}")
         return validated
 
     @classmethod

@@ -13,3 +13,4 @@ class FieldType(str, enum.Enum):
     SELECT = "select"
     MULTISELECT = "multiselect"
     EMAIL = "email"
+    FORMULA = "formula"

@@ -7,30 +7,53 @@ export type FieldType =
   | 'select'
   | 'multiselect'
   | 'email'
+  | 'formula'  // ← ДОБАВЛЕНО!
 
-// Для компонентов (с человеческими названиями)
-export const FIELD_TYPES: { value: FieldType; label: string }[] = [
-  { value: 'text', label: 'Text' },
-  { value: 'number', label: 'Number' },
-  { value: 'date', label: 'Date' },
-  { value: 'boolean', label: 'Yes/No' },
-  { value: 'select', label: 'Select (dropdown)' },
-  { value: 'multiselect', label: 'Multi Select' },
-  { value: 'email', label: 'Email' },
+// Для компонентов (с человеческими названиями и иконками)
+export const FIELD_TYPES: { value: FieldType; label: string; icon: string; description: string }[] = [
+  { value: 'text', label: 'Text', icon: '📝', description: 'Single line text' },
+  { value: 'number', label: 'Number', icon: '🔢', description: 'Numeric values' },
+  { value: 'date', label: 'Date', icon: '📅', description: 'Date picker' },
+  { value: 'boolean', label: 'Yes/No', icon: '✅', description: 'Checkbox' },
+  { value: 'select', label: 'Select', icon: '▼', description: 'Dropdown list' },
+  { value: 'multiselect', label: 'Multi Select', icon: '☑️', description: 'Multiple choices' },
+  { value: 'email', label: 'Email', icon: '📧', description: 'Email address' },
+  { value: 'formula', label: 'Formula', icon: 'ƒ', description: 'Calculated field' },
 ]
 
-// ИСПРАВЛЕНО: убираем Record, делаем простой объект с типами
+// Конфигурация для рендеринга полей
 export const FIELD_TYPE_CONFIG: {
   [key in FieldType]: {
-    component: 'input' | 'select' | 'checkbox' | 'textarea'
+    component: 'input' | 'select' | 'checkbox' | 'textarea' | 'div'
     inputType?: string
+    readonly?: boolean
   }
 } = {
-  text: { component: 'input', inputType: 'text' },
-  number: { component: 'input', inputType: 'number' },
-  date: { component: 'input', inputType: 'date' },
-  boolean: { component: 'checkbox' },
-  select: { component: 'select' },
-  multiselect: { component: 'select' }, // multiple=true добавим в компоненте
-  email: { component: 'input', inputType: 'email' },
+  text: { component: 'input', inputType: 'text', readonly: false },
+  number: { component: 'input', inputType: 'number', readonly: false },
+  date: { component: 'input', inputType: 'date', readonly: false },
+  boolean: { component: 'checkbox', readonly: false },
+  select: { component: 'select', readonly: false },
+  multiselect: { component: 'select', readonly: false },
+  email: { component: 'input', inputType: 'email', readonly: false },
+  formula: { component: 'div', readonly: true },  // formula только для чтения
+}
+
+// Тип для опций поля (включая формулу)
+export interface FieldOptions {
+  choices?: string[]  // для select/multiselect
+  formula?: string    // для formula
+  return_type?: 'number' | 'string' | 'boolean'  // для formula
+  dependencies?: string[]  // поля, от которых зависит формула
+}
+
+// Расширенный тип поля для создания
+export interface CreateFieldDto {
+  name: string
+  display_name: string
+  field_type: FieldType
+  is_required?: boolean
+  is_unique?: boolean
+  options?: FieldOptions
+  sort_order?: number
 }

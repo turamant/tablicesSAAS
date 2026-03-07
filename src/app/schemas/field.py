@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional, Any
+from typing import Dict, Optional, Any
 from uuid import UUID
 from datetime import datetime
 
@@ -10,6 +10,7 @@ class FieldCreate(BaseModel):
     is_required: bool = False
     is_unique: bool = False
     options: Optional[Any] = None
+    options: Optional[Dict[str, Any]] = None  # здесь будет храниться формула
     sort_order: int = 0
 
 class FieldUpdate(BaseModel):

@@ -28,7 +28,8 @@ const fieldIcons: Record<string, string> = {
   boolean: '✅',
   email: '📧',
   select: '▼',
-  multiselect: '☑️'
+  multiselect: '☑️',
+  formula: 'ƒ',  
 }
 
 // Следим за record
@@ -118,7 +119,9 @@ function validateForm(): boolean {
 
 // Проверка нужно ли показывать ошибку для поля
 function shouldShowError(fieldName: string): boolean {
-  return touched.value[fieldName] && !!errors.value[fieldName]
+  const isTouched = touched.value[fieldName] === true
+  const hasError = !!errors.value[fieldName]
+  return isTouched && hasError
 }
 
 // Подготовка данных
@@ -179,7 +182,8 @@ function getFieldTypeColor(type: string): string {
     boolean: 'bg-yellow-50 text-yellow-700',
     email: 'bg-indigo-50 text-indigo-700',
     select: 'bg-pink-50 text-pink-700',
-    multiselect: 'bg-orange-50 text-orange-700'
+    multiselect: 'bg-orange-50 text-orange-700',
+    formula: 'bg-purple-100 text-purple-700',
   }
   return colors[type] || 'bg-gray-50 text-gray-700'
 }
@@ -332,6 +336,19 @@ function getFieldTypeColor(type: string): string {
                       {{ option }}
                     </option>
                   </select>
+                  <!-- Formula field (readonly) -->
+<div v-else-if="field.field_type === 'formula'">
+  <div class="relative">
+    <input
+      :value="form[field.name]"
+      readonly
+      disabled
+      class="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-600"
+    />
+    <span class="absolute right-3 top-2 text-xs text-gray-400">ƒ</span>
+  </div>
+  <p class="text-xs text-gray-400 mt-1">Автоматически рассчитывается</p>
+</div>
                   
                   <!-- Textarea for long text -->
                   <textarea

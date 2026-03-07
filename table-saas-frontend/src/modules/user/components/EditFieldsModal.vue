@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import type { Table, Field } from '@/core/api/user/tables'
 import { fieldsApi } from '@/core/api/user/fields'
+import { FIELD_TYPES, FIELD_TYPE_CONFIG, type FieldOptions } from '@/core/types/field.types'
 
 const props = defineProps<{
   show: boolean
@@ -19,7 +20,10 @@ const newField = ref({
   display_name: '',
   field_type: 'text',
   is_required: false,
-  options: null as { choices: string[] } | null
+  is_unique: false,
+  options: null as FieldOptions | null,
+  formula: '',
+  return_type: 'number' as 'number' | 'string' | 'boolean'
 })
 
 const loading = ref(false)
@@ -28,54 +32,21 @@ const editingField = ref<Field | null>(null)
 const editForm = ref({
   display_name: '',
   is_required: false,
-  optionsText: ''
+  optionsText: '',
+  formula: '',
+  return_type: 'number' as 'number' | 'string' | 'boolean'
 })
 
-// Типы полей с иконками и описаниями
-const fieldTypes = [
-  { 
-    value: 'text', 
-    label: 'Text',
-    icon: '📝',
-    description: 'Single line text'
-  },
-  { 
-    value: 'number', 
-    label: 'Number',
-    icon: '🔢',
-    description: 'Numeric values'
-  },
-  { 
-    value: 'date', 
-    label: 'Date',
-    icon: '📅',
-    description: 'Date picker'
-  },
-  { 
-    value: 'boolean', 
-    label: 'Yes/No',
-    icon: '✅',
-    description: 'Checkbox'
-  },
-  { 
-    value: 'email', 
-    label: 'Email',
-    icon: '📧',
-    description: 'Email address'
-  },
-  { 
-    value: 'select', 
-    label: 'Select',
-    icon: '▼',
-    description: 'Dropdown list'
-  },
-  { 
-    value: 'multiselect', 
-    label: 'Multi Select',
-    icon: '☑️',
-    description: 'Multiple choices'
-  },
-]
+// Показывать выбор формул
+const showFieldPicker = ref(false)
+
+// Доступные поля для формул (исключая formula поля)
+const availableFields = computed(() => {
+  return props.table?.fields.filter(f => f.field_type !== 'formula') || []
+})
+
+// Типы полей с иконками и описаниями (импортировано из field.types.ts)
+const fieldTypes = FIELD_TYPES
 
 // Сортировка полей по sort_order
 const sortedFields = computed(() => {
@@ -84,7 +55,18 @@ const sortedFields = computed(() => {
 
 // Валидация
 const canAddField = computed(() => {
-  return newField.value.display_name.trim() !== ''
+  if (!newField.value.display_name.trim()) return false
+  
+  if (newField.value.field_type === 'select' || newField.value.field_type === 'multiselect') {
+    const choices = newField.value.options?.choices
+    return !!choices && choices.length > 0
+  }
+  
+  if (newField.value.field_type === 'formula') {
+    return newField.value.formula?.trim() !== ''
+  }
+  
+  return true
 })
 
 // Генерация технического имени
@@ -103,6 +85,33 @@ function onDisplayNameInput() {
   }
 }
 
+// Вставить поле в формулу
+function insertField(fieldName: string) {
+  newField.value.formula += `{${fieldName}}`
+  showFieldPicker.value = false
+}
+
+// Валидация формулы (простая)
+function validateFormula(formula: string): boolean {
+  if (!formula) return false
+  
+  // Проверяем синтаксис
+  try {
+    // Простая проверка на валидность скобок
+    const stack: string[] = []
+    for (const char of formula) {
+      if (char === '(') stack.push('(')
+      if (char === ')') {
+        if (stack.length === 0) return false
+        stack.pop()
+      }
+    }
+    return stack.length === 0
+  } catch {
+    return false
+  }
+}
+
 // Добавить поле
 async function addField() {
   if (!props.table || !canAddField.value) return
@@ -113,12 +122,21 @@ async function addField() {
       name: newField.value.name || generateTechnicalName(newField.value.display_name),
       display_name: newField.value.display_name,
       field_type: newField.value.field_type,
-      is_required: newField.value.is_required
+      is_required: newField.value.is_required,
+      is_unique: newField.value.is_unique
     }
     
-    // Добавляем options для select/multiselect
+    // Добавляем options для select/multiselect/formula
     if (newField.value.field_type === 'select' || newField.value.field_type === 'multiselect') {
-      fieldData.options = newField.value.options
+      fieldData.options = newField.value.options || { choices: [] }
+    } else if (newField.value.field_type === 'formula') {
+      fieldData.options = {
+        formula: newField.value.formula,
+        return_type: newField.value.return_type,
+        dependencies: availableFields.value
+          .filter(f => newField.value.formula.includes(`{${f.name}}`))
+          .map(f => f.name)
+      }
     }
     
     await fieldsApi.createField(props.table.id, fieldData)
@@ -129,7 +147,10 @@ async function addField() {
       display_name: '',
       field_type: 'text',
       is_required: false,
-      options: null
+      is_unique: false,
+      options: null,
+      formula: '',
+      return_type: 'number'
     }
     
     emit('updated')
@@ -154,7 +175,9 @@ function startEdit(field: Field) {
   editForm.value = {
     display_name: field.display_name,
     is_required: field.is_required,
-    optionsText: field.options?.choices?.join(', ') || ''
+    optionsText: field.options?.choices?.join(', ') || '',
+    formula: field.options?.formula || '',
+    return_type: field.options?.return_type || 'number'
   }
 }
 
@@ -175,7 +198,7 @@ async function saveEdit() {
       is_required: editForm.value.is_required
     }
     
-    // Добавляем options для select/multiselect
+    // Добавляем options для select/multiselect/formula
     if (editingField.value.field_type === 'select' || editingField.value.field_type === 'multiselect') {
       const choices = editForm.value.optionsText
         .split(',')
@@ -183,6 +206,14 @@ async function saveEdit() {
         .filter(s => s)
       
       updateData.options = { choices }
+    } else if (editingField.value.field_type === 'formula') {
+      updateData.options = {
+        formula: editForm.value.formula,
+        return_type: editForm.value.return_type,
+        dependencies: availableFields.value
+          .filter(f => editForm.value.formula.includes(`{${f.name}}`))
+          .map(f => f.name)
+      }
     }
     
     await fieldsApi.updateField(props.table.id, editingField.value.id, updateData)
@@ -322,6 +353,25 @@ function closeModal() {
                         <p class="text-xs text-gray-400 mt-1">Enter options separated by commas</p>
                       </div>
                       
+                      <!-- Formula for Formula fields -->
+                      <div v-if="editingField?.field_type === 'formula'">
+                        <label class="block text-xs text-gray-500 mb-1">Formula</label>
+                        <input
+                          v-model="editForm.formula"
+                          type="text"
+                          class="w-full px-3 py-2 font-mono border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          placeholder="{price} * {quantity}"
+                        />
+                        <div class="mt-2">
+                          <label class="block text-xs text-gray-500 mb-1">Return type</label>
+                          <select v-model="editForm.return_type" class="text-sm border rounded-lg px-2 py-1">
+                            <option value="number">Number</option>
+                            <option value="string">String</option>
+                            <option value="boolean">Boolean</option>
+                          </select>
+                        </div>
+                      </div>
+                      
                       <!-- Required Checkbox -->
                       <div class="flex items-center">
                         <label class="flex items-center gap-2 text-sm">
@@ -370,6 +420,11 @@ function closeModal() {
                         <!-- Show options for select/multiselect -->
                         <div v-if="field.options?.choices?.length" class="mt-2 text-xs text-gray-500">
                           Options: {{ field.options.choices.join(', ') }}
+                        </div>
+                        
+                        <!-- Show formula -->
+                        <div v-if="field.field_type === 'formula' && field.options?.formula" class="mt-2 text-xs text-blue-600 bg-blue-50 p-2 rounded">
+                          <span class="font-medium">ƒ</span> {{ field.options.formula }}
                         </div>
                       </div>
                       
@@ -476,6 +531,55 @@ function closeModal() {
                   <p class="text-xs text-gray-400 mt-1">Enter options separated by commas</p>
                 </div>
                 
+                <!-- Formula for Formula fields -->
+                <div v-if="newField.field_type === 'formula'">
+                  <label class="block text-sm font-medium text-gray-700 mb-1">
+                    Formula <span class="text-red-500">*</span>
+                  </label>
+                  <div class="relative">
+                    <input
+                      v-model="newField.formula"
+                      type="text"
+                      class="w-full px-3 py-2 font-mono border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      placeholder="{price} * {quantity}"
+                    />
+                    
+                    <!-- Field picker button -->
+                    <button 
+                      type="button"
+                      @click="showFieldPicker = !showFieldPicker"
+                      class="absolute right-2 top-2 text-xs bg-gray-100 px-2 py-1 rounded hover:bg-gray-200"
+                    >
+                      + поле
+                    </button>
+                    
+                    <!-- Field picker dropdown -->
+                    <div v-if="showFieldPicker" class="absolute z-10 mt-1 bg-white border rounded-lg shadow-lg max-h-60 overflow-y-auto w-full">
+                      <div 
+                        v-for="field in availableFields" 
+                        :key="field.id"
+                        @click="insertField(field.name)"
+                        class="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                      >
+                        {{ field.display_name }} ({{ field.name }})
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div class="mt-2">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Return type</label>
+                    <select v-model="newField.return_type" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                      <option value="number">Number</option>
+                      <option value="string">String</option>
+                      <option value="boolean">Boolean</option>
+                    </select>
+                  </div>
+                  
+                  <p class="text-xs text-gray-400 mt-1">
+                    Используйте {field_name} для ссылки на другие поля
+                  </p>
+                </div>
+                
                 <!-- Required Checkbox -->
                 <div class="flex items-center pt-2">
                   <label class="flex items-center gap-2 text-sm">
@@ -488,10 +592,24 @@ function closeModal() {
                   </label>
                 </div>
                 
+                <!-- Unique Checkbox -->
+                <div class="flex items-center">
+                  <label class="flex items-center gap-2 text-sm">
+                    <input
+                      v-model="newField.is_unique"
+                      type="checkbox"
+                      class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    Unique values only
+                  </label>
+                </div>
+                
                 <!-- Add Button -->
                 <button
                   @click="addField"
-                  :disabled="!canAddField || loading || (newField.field_type === 'select' && !newField.options?.choices?.length)"
+                  :disabled="!canAddField || loading || 
+                    ((newField.field_type === 'select' || newField.field_type === 'multiselect') && 
+                    !newField.options?.choices?.length)"
                   class="w-full bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                 >
                   <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

@@ -25,7 +25,7 @@ export interface Table {
 export interface CreateFieldDto {
   name: string
   display_name: string
-  field_type: 'text' | 'number' | 'date' | 'boolean' | 'select' | 'multiselect' | 'email'
+  field_type: 'text' | 'number' | 'date' | 'boolean' | 'select' | 'multiselect' | 'email'| 'formula'
   is_required?: boolean
   is_unique?: boolean
   options?: any
